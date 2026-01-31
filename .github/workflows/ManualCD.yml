@@ -1,15 +1,28 @@
-name: Manual CD
+name: Continuous Deployment
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Choose Target'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+          - local
+          - ec2
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.deploy_target == 'local' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Testing
+        run: echo "The button is working!"
 
-      - name: Print Hello
-        run: echo "Manual CD triggered"
-
+      - name: Docker Run Local
+        if: github.event.inputs.deploy_target == 'local'
+        run: |
+          docker pull mennat2003/menna-app:latest
+          docker stop app-container || true
+          docker rm app-container || true
+          docker run -d --name app-container -p 8080:80 mennat2003/menna-app:latest
