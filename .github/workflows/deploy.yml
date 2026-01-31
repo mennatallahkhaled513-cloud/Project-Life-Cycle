@@ -1,11 +1,10 @@
-name: Continuous Deployment
+name: MENNA-CD
 
 on:
   workflow_dispatch:
     inputs:
       deploy_target:
-        description: 'Choose Target'
-        required: true
+        description: 'Choose'
         default: 'local'
         type: choice
         options:
@@ -13,16 +12,8 @@ on:
           - ec2
 
 jobs:
-  deploy:
-    runs-on: ${{ github.event.inputs.deploy_target == 'local' && 'self-hosted' || 'ubuntu-latest' }}
+  deploy-job:
+    runs-on: self-hosted
     steps:
-      - name: Testing
-        run: echo "The button is working!"
-
-      - name: Docker Run Local
-        if: github.event.inputs.deploy_target == 'local'
-        run: |
-          docker pull mennat2003/menna-app:latest
-          docker stop app-container || true
-          docker rm app-container || true
-          docker run -d --name app-container -p 8080:80 mennat2003/menna-app:latest
+      - name: Hello
+        run: echo "Manual Trigger Works!"
