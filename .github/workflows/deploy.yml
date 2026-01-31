@@ -13,15 +13,15 @@ on:
           - ec2
 
 env:
-  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/menna-app
+  DOCKER_IMAGE: mennat2003/menna-app
 
 jobs:
-  # 1. Infrastructure Job: Runs only for EC2
+  # Job 1: Build AWS Infrastructure (Runs only for EC2)
   provision-infra:
     if: github.event.inputs.deploy_target == 'ec2'
     runs-on: ubuntu-latest
     outputs:
-      ec2_ip: ${{ steps.save_ip.outputs.ip }}
+      ec2_ip: ${{ steps.set_ip.outputs.ip }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -38,21 +38,23 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Save Instance IP
-        id: save_ip
+      - name: Get Instance IP
+        id: set_ip
         run: echo "ip=$(terraform output -raw ec2_public_ip)" >> $GITHUB_OUTPUT
         working-directory: ./terraform
 
-  # 2. Deployment Job
+  # Job 2: Deploy Application
   deploy:
     needs: [provision-infra]
-    # This logic allows local deploy to start even if infra job is skipped
-    if: always() && (needs.provision-infra.result == 'success' || github.event.inputs.deploy_target == 'local')
+    # This ensures the job runs if infra is success OR if it was skipped (for local)
+    if: |
+      always() && 
+      (needs.provision-infra.result == 'success' || needs.provision-infra.result == 'skipped')
     runs-on: ${{ github.event.inputs.deploy_target == 'local' && 'self-hosted' || 'ubuntu-latest' }}
     
     steps:
-      # --- Target: Local (Rocky Linux) ---
-      - name: Deploy to Localhost
+      # --- Target: Local (Your Rocky Linux Runner) ---
+      - name: Deploy to Local Machine
         if: github.event.inputs.deploy_target == 'local'
         run: |
           docker pull ${{ env.DOCKER_IMAGE }}:latest
@@ -60,7 +62,7 @@ jobs:
           docker rm app-container || true
           docker run -d --name app-container -p 8080:80 ${{ env.DOCKER_IMAGE }}:latest
 
-      # --- Target: AWS EC2 ---
+      # --- Target: AWS EC2 (Using SSH) ---
       - name: Deploy to EC2 via SSH
         if: github.event.inputs.deploy_target == 'ec2'
         uses: appleboy/ssh-action@master
