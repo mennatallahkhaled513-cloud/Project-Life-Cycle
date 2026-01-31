@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy_target:
-        description: 'Select Deployment Target'
+        description: 'Choose Target'
         required: true
         default: 'local'
         type: choice
@@ -12,66 +12,17 @@ on:
           - local
           - ec2
 
-env:
-  DOCKER_IMAGE: mennat2003/menna-app
-
 jobs:
-  # Job 1: Build AWS Infrastructure (Runs only for EC2)
-  provision-infra:
-    if: github.event.inputs.deploy_target == 'ec2'
-    runs-on: ubuntu-latest
-    outputs:
-      ec2_ip: ${{ steps.set_ip.outputs.ip }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init & Apply
-        run: |
-          terraform init
-          terraform apply -auto-approve
-        working-directory: ./terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-      - name: Get Instance IP
-        id: set_ip
-        run: echo "ip=$(terraform output -raw ec2_public_ip)" >> $GITHUB_OUTPUT
-        working-directory: ./terraform
-
-  # Job 2: Deploy Application
   deploy:
-    needs: [provision-infra]
-    # This ensures the job runs if infra is success OR if it was skipped (for local)
-    if: |
-      always() && 
-      (needs.provision-infra.result == 'success' || needs.provision-infra.result == 'skipped')
     runs-on: ${{ github.event.inputs.deploy_target == 'local' && 'self-hosted' || 'ubuntu-latest' }}
-    
     steps:
-      # --- Target: Local (Your Rocky Linux Runner) ---
-      - name: Deploy to Local Machine
+      - name: Testing
+        run: echo "The button is working!"
+
+      - name: Docker Run Local
         if: github.event.inputs.deploy_target == 'local'
         run: |
-          docker pull ${{ env.DOCKER_IMAGE }}:latest
+          docker pull mennat2003/menna-app:latest
           docker stop app-container || true
           docker rm app-container || true
-          docker run -d --name app-container -p 8080:80 ${{ env.DOCKER_IMAGE }}:latest
-
-      # --- Target: AWS EC2 (Using SSH) ---
-      - name: Deploy to EC2 via SSH
-        if: github.event.inputs.deploy_target == 'ec2'
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ needs.provision-infra.outputs.ec2_ip }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            sudo docker pull ${{ env.DOCKER_IMAGE }}:latest
-            sudo docker stop app-container || true
-            sudo docker rm app-container || true
-            sudo docker run -d --name app-container -p 80:80 ${{ env.DOCKER_IMAGE }}:latest
+          docker run -d --name app-container -p 8080:80 mennat2003/menna-app:latest
