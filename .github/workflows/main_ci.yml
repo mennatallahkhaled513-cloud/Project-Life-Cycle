@@ -11,17 +11,18 @@ env:
 
 jobs:
   ci-pipeline:
-    # Switched from self-hosted to GitHub-hosted runner
+    # Using GitHub's managed Ubuntu server
     runs-on: ubuntu-latest
     timeout-minutes: 20 
     
     steps:
-      # Step 1: Clone the latest code
+      # Step 1: Pull the latest code from your repository
       - name: 1. Checkout Code
         id: checkout
         uses: actions/checkout@v4
 
       # Step 2: Static Application Security Testing (SAST)
+      # Scans the file system for secrets and vulnerabilities
       - name: 2. Scan Source Code (SAST)
         id: sast_scan
         uses: aquasecurity/trivy-action@master
@@ -32,7 +33,7 @@ jobs:
           exit-code: '1' 
           severity: 'CRITICAL,HIGH'
 
-      # Step 3: Build Docker Image using Commit SHA
+      # Step 3: Build Docker Image with Commit SHA tag
       - name: 3. Build Docker Image
         id: build_image
         run: |
@@ -40,12 +41,12 @@ jobs:
           echo "IMAGE_TAG=$SHORT_SHA" >> $GITHUB_ENV
           docker build -t ${{ env.DOCKER_IMAGE }}:latest -t ${{ env.DOCKER_IMAGE }}:$SHORT_SHA .
 
-      # Step 4: Prepare the directory for security reports
+      # Step 4: Create a directory to store scan results
       - name: 4. Create Scan Directory
         id: create_dir
         run: mkdir -p ${{ env.SCAN_DIR }}
 
-      # Step 5: Vulnerability Scan of the built image (Output: TXT)
+      # Step 5: Security Scan of the image (Terminal Table Output)
       - name: 5. Image Security Scan (TXT)
         id: image_scan_txt
         uses: aquasecurity/trivy-action@master
@@ -54,18 +55,18 @@ jobs:
           format: 'table'
           output: '${{ env.SCAN_DIR }}/nginx.txt'
 
-      # Step 6: Vulnerability Scan of the built image (Output: HTML)
-      # This will now work perfectly on GitHub's hosted runner
+      # Step 6: Security Scan of the image (HTML Report Output)
+      # Template path fixed for GitHub-hosted runners
       - name: 6. Image Security Scan (HTML)
         id: image_scan_html
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}'
           format: 'template'
-          template: '@/contrib/html.tpl'
+          template: '@contrib/html.tpl'
           output: '${{ env.SCAN_DIR }}/report.html'
 
-      # Step 7: Upload reports as Artifacts
+      # Step 7: Upload the generated reports as a downloadable artifact
       - name: 7. Upload Security Artifacts
         id: upload_artifacts
         if: success()
@@ -74,7 +75,7 @@ jobs:
           name: Security-Reports
           path: ${{ env.SCAN_DIR }}/
 
-      # Step 8: Login to Docker Hub
+      # Step 8: Authenticate with Docker Hub
       - name: 8. Login to Docker Hub
         id: docker_login
         if: success()
@@ -83,7 +84,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # Step 9: Push the final images to Docker Hub
+      # Step 9: Push both 'latest' and 'SHA' tags to Docker Hub
       - name: 9. Push Image to Docker Hub
         id: push_image
         if: success()
