@@ -11,18 +11,17 @@ env:
 
 jobs:
   ci-pipeline:
-    # Runs on your Rocky Linux local machine via self-hosted runner
-    runs-on: self-hosted
+    # Switched from self-hosted to GitHub-hosted runner
+    runs-on: ubuntu-latest
     timeout-minutes: 20 
     
     steps:
-      # Step 1: Clone the latest code from the repository
+      # Step 1: Clone the latest code
       - name: 1. Checkout Code
         id: checkout
         uses: actions/checkout@v4
 
       # Step 2: Static Application Security Testing (SAST)
-      # Fails the pipeline if Critical or High vulnerabilities are found in the code
       - name: 2. Scan Source Code (SAST)
         id: sast_scan
         uses: aquasecurity/trivy-action@master
@@ -33,15 +32,12 @@ jobs:
           exit-code: '1' 
           severity: 'CRITICAL,HIGH'
 
-      # Step 3: Build Docker Image using Commit SHA as a unique tag
+      # Step 3: Build Docker Image using Commit SHA
       - name: 3. Build Docker Image
         id: build_image
         run: |
-          # Generate short version of commit SHA
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
           echo "IMAGE_TAG=$SHORT_SHA" >> $GITHUB_ENV
-          
-          # Build with both latest and commit-specific tags
           docker build -t ${{ env.DOCKER_IMAGE }}:latest -t ${{ env.DOCKER_IMAGE }}:$SHORT_SHA .
 
       # Step 4: Prepare the directory for security reports
@@ -59,17 +55,17 @@ jobs:
           output: '${{ env.SCAN_DIR }}/nginx.txt'
 
       # Step 6: Vulnerability Scan of the built image (Output: HTML)
-      # Fixed template path: removed leading slash to resolve "no such file" error
+      # This will now work perfectly on GitHub's hosted runner
       - name: 6. Image Security Scan (HTML)
         id: image_scan_html
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}'
           format: 'template'
-          template: '@contrib/html.tpl'
+          template: '@/contrib/html.tpl'
           output: '${{ env.SCAN_DIR }}/report.html'
 
-      # Step 7: Upload reports as Artifacts (Only if previous steps succeeded)
+      # Step 7: Upload reports as Artifacts
       - name: 7. Upload Security Artifacts
         id: upload_artifacts
         if: success()
