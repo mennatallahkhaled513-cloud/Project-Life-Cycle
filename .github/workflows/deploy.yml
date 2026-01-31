@@ -1,0 +1,75 @@
+name: Continuous Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Select Deployment Target'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+          - local
+          - ec2
+
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/menna-app
+
+jobs:
+  # 1. Infrastructure Job: Runs only for EC2
+  provision-infra:
+    if: github.event.inputs.deploy_target == 'ec2'
+    runs-on: ubuntu-latest
+    outputs:
+      ec2_ip: ${{ steps.save_ip.outputs.ip }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init & Apply
+        run: |
+          terraform init
+          terraform apply -auto-approve
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Save Instance IP
+        id: save_ip
+        run: echo "ip=$(terraform output -raw ec2_public_ip)" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
+
+  # 2. Deployment Job
+  deploy:
+    needs: [provision-infra]
+    # This logic allows local deploy to start even if infra job is skipped
+    if: always() && (needs.provision-infra.result == 'success' || github.event.inputs.deploy_target == 'local')
+    runs-on: ${{ github.event.inputs.deploy_target == 'local' && 'self-hosted' || 'ubuntu-latest' }}
+    
+    steps:
+      # --- Target: Local (Rocky Linux) ---
+      - name: Deploy to Localhost
+        if: github.event.inputs.deploy_target == 'local'
+        run: |
+          docker pull ${{ env.DOCKER_IMAGE }}:latest
+          docker stop app-container || true
+          docker rm app-container || true
+          docker run -d --name app-container -p 8080:80 ${{ env.DOCKER_IMAGE }}:latest
+
+      # --- Target: AWS EC2 ---
+      - name: Deploy to EC2 via SSH
+        if: github.event.inputs.deploy_target == 'ec2'
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ needs.provision-infra.outputs.ec2_ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo docker pull ${{ env.DOCKER_IMAGE }}:latest
+            sudo docker stop app-container || true
+            sudo docker rm app-container || true
+            sudo docker run -d --name app-container -p 80:80 ${{ env.DOCKER_IMAGE }}:latest
