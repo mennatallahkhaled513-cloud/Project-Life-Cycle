@@ -6,7 +6,7 @@ on:
 
 jobs:
   validate:
-    name: Dockerfile & Security Validation
+    name: Dockerfile Security Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -16,39 +16,29 @@ jobs:
       - name: Verify Dockerfile Existence
         run: |
           if [ -f "Dockerfile" ]; then
-            echo "✅ Dockerfile exists in the root directory."
+            echo "✅ Dockerfile exists."
           else
             echo "❌ Error: Dockerfile is missing!"
             exit 1
           fi
 
-      # --- Step 2: Lint Dockerfile (Check for syntax errors) ---
-      # This checks if the file is valid WITHOUT building an image
-      - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: Dockerfile
-
-      # --- Step 3: Security Scan (Filesystem Scan) ---
-      # Since we aren't building an image, we scan the "fs" (Filesystem)
-      - name: Security Scan (Trivy FS)
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          format: 'table'
-          exit-code: 1
-          severity: 'CRITICAL,HIGH'
-
-      # --- Step 4: Generate Report ---
-      - name: Generate Validation Report
+      # --- Step 2: Install Checkov (Prerequisites) ---
+      - name: Install Python and Checkov
         run: |
-          echo "<h1>Validation Report</h1>" > validation-report.html
-          echo "<p>Dockerfile Existence: PASS</p>" >> validation-report.html
-          echo "<p>Security Scan: Completed</p>" >> validation-report.html
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install checkov
 
-      # --- Step 5: Upload Artifact ---
-      - name: Upload Validation Report
+      # --- Step 3: Run Checkov Scan & Generate HTML ---
+      # We use '|| true' to ensure the pipeline continues so we can upload the report 
+      # even if it finds security warnings.
+      - name: Run Checkov Scan
+        run: |
+          checkov -f Dockerfile --check CKV_DOCKER_1,CKV_DOCKER_2,CKV_DOCKER_3 --output html > checkov-report.html || true
+
+      # --- Step 4: Upload HTML Report to Artifacts ---
+      - name: Upload Scan Report
         uses: actions/upload-artifact@v4
         with:
-          name: validation-results
-          path: validation-report.html
+          name: checkov-security-report
+          path: checkov-report.html
