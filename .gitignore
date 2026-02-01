@@ -1,0 +1,12 @@
+# 1. Private Keys (أهم حاجة عشان الأمان)
+*.pem
+
+# 2. Terraform State & Folders (عشان الريبوزيتوري ميبقاش تقيل)
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# 3. System Files
+.DS_Store
+Thumbs.db
