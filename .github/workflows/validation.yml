@@ -1,0 +1,54 @@
+name: Validation Pipeline
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    name: Dockerfile & Security Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # --- Step 1: Check if Dockerfile exists ---
+      - name: Verify Dockerfile Existence
+        run: |
+          if [ -f "Dockerfile" ]; then
+            echo "✅ Dockerfile exists in the root directory."
+          else
+            echo "❌ Error: Dockerfile is missing!"
+            exit 1
+          fi
+
+      # --- Step 2: Lint Dockerfile (Check for syntax errors) ---
+      # This checks if the file is valid WITHOUT building an image
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+      # --- Step 3: Security Scan (Filesystem Scan) ---
+      # Since we aren't building an image, we scan the "fs" (Filesystem)
+      - name: Security Scan (Trivy FS)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          format: 'table'
+          exit-code: 1
+          severity: 'CRITICAL,HIGH'
+
+      # --- Step 4: Generate Report ---
+      - name: Generate Validation Report
+        run: |
+          echo "<h1>Validation Report</h1>" > validation-report.html
+          echo "<p>Dockerfile Existence: PASS</p>" >> validation-report.html
+          echo "<p>Security Scan: Completed</p>" >> validation-report.html
+
+      # --- Step 5: Upload Artifact ---
+      - name: Upload Validation Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: validation-report.html
