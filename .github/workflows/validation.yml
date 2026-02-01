@@ -22,30 +22,50 @@ jobs:
             exit 1
           fi
 
-      # --- Step 2: Install Prerequisites (Python & Checkov) ---
-      - name: Install Checkov
+      # --- Step 2: Install Prerequisites ---
+      - name: Install Python, Checkov, and Jinja2
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip jq
-          pip3 install checkov
+          sudo apt-get install -y python3-pip
+          pip3 install checkov 
 
-      # --- Step 3: Run Checkov Scan and Generate HTML ---
-      # We output to JSON first, then wrap it in HTML tags for the artifact
+      # --- Step 3: Run Checkov & Generate True HTML ---
+      # We use 'junitxml' format because it's easy to convert to a nice table
       - name: Run Checkov Scan
         run: |
-          checkov -f Dockerfile --check CKV_DOCKER_1,CKV_DOCKER_2,CKV_DOCKER_3 -o json > checkov-results.json || true
-          
-          # Create a simple HTML wrapper to make the JSON readable in a browser
-          echo "<html><body style='font-family: sans-serif; background: #f4f4f4; padding: 20px;'>" > checkov-report.html
-          echo "<h1>Checkov Security Scan Report</h1>" >> checkov-report.html
-          echo "<div style='background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd;'>" >> checkov-report.html
-          echo "<h3>Scan Results (JSON Format):</h3>" >> checkov-report.html
-          echo "<pre>$(cat checkov-results.json | jq .)</pre>" >> checkov-report.html
-          echo "</div></body></html>" >> checkov-report.html
+          checkov -f Dockerfile --check CKV_DOCKER_1,CKV_DOCKER_2,CKV_DOCKER_3 -o junitxml > results.xml || true
 
-      # --- Step 4: Upload Report as Artifact ---
+      # --- Step 4: Convert XML to a Professional HTML Table ---
+      - name: Convert to HTML
+        run: |
+          echo "<html><head><style>
+          table {border-collapse: collapse; width: 100%; font-family: sans-serif;}
+          th, td {text-align: left; padding: 12px; border-bottom: 1px solid #ddd;}
+          th {background-color: #4CAF50; color: white;}
+          .failed {color: red; font-weight: bold;}
+          .passed {color: green; font-weight: bold;}
+          </style></head><body>
+          <h1>Checkov Security Scan Report</h1>
+          <table>
+          <tr><th>Check ID</th><th>Check Name</th><th>Status</th></tr>" > report.html
+          
+          # This script parses the XML to build the HTML rows
+          grep -oP 'testcase classname="\K[^"]+|name="\K[^"]+|failure message="\K[^"]+' results.xml | sed 'N;N;s/\n/ /g' | while read -r line; do
+            ID=$(echo $line | awk '{print $1}')
+            NAME=$(echo $line | cut -d' ' -f2-)
+            echo "<tr><td>$ID</td><td>$NAME</td><td class='failed'>FAILED</td></tr>" >> report.html
+          done
+          
+          # If no failures found in XML
+          if ! grep -q "failure" results.xml; then
+             echo "<tr><td colspan='2'>All Selected Checks</td><td class='passed'>PASSED ✅</td></tr>" >> report.html
+          fi
+          
+          echo "</table></body></html>" >> report.html
+
+      # --- Step 5: Upload the actual HTML file ---
       - name: Upload Scan Report
         uses: actions/upload-artifact@v4
         with:
           name: checkov-security-report
-          path: checkov-report.html
+          path: report.html
