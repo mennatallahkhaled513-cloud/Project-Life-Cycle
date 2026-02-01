@@ -13,9 +13,9 @@ data "aws_ami" "latest_ubuntu" {
   }
 }
 
-# Security Group
+# Security Group (updated name to avoid duplicates)
 resource "aws_security_group" "app_sg" {
-  name        = "menna_app_sg_v5"
+  name        = "menna_app_sg_v6"  # changed to avoid duplicate error
   description = "Allow SSH, HTTP, and Docker traffic"
 
   ingress {
@@ -58,7 +58,7 @@ resource "aws_security_group" "app_sg" {
 resource "aws_instance" "menna_ec2" {
   ami           = data.aws_ami.latest_ubuntu.id
   instance_type = "t2.micro"
-  key_name      = "ci_pem"   # <-- Correct key pair name
+  key_name      = "ci_pem"   # <-- Correct key pair
   security_groups = [aws_security_group.app_sg.name]
 
   tags = {
@@ -75,7 +75,7 @@ resource "aws_instance" "menna_ec2" {
   EOT
 }
 
-# Optional Output
+# Output: EC2 Public IP
 output "ec2_public_ip" {
   value = aws_instance.menna_ec2.public_ip
 }
