@@ -1,15 +1,31 @@
 # 1. Provider Configuration
 provider "aws" {
-  region = "us-east-1" # Change this to your preferred region
+  region = "us-east-1"
 }
 
-# 2. Security Group (Opens SSH and HTTP ports)
+# 2. Data Source to fetch the latest Ubuntu 22.04 AMI
+data "aws_ami" "latest_ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical's official AWS ID
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# 3. Security Group (Updated to include Port 8080 for your Docker App)
 resource "aws_security_group" "app_sg" {
   name        = "allow_web_traffic"
-  description = "Allow SSH and HTTP inbound traffic"
+  description = "Allow SSH, HTTP, and App traffic"
 
   ingress {
-    description = "SSH from anywhere"
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -17,9 +33,17 @@ resource "aws_security_group" "app_sg" {
   }
 
   ingress {
-    description = "HTTP from anywhere"
+    description = "HTTP"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Docker App Port"
+    from_port   = 8080
+    to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -32,20 +56,17 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-# 3. EC2 Instance Configuration
+# 4. EC2 Instance Configuration
 resource "aws_instance" "menna_ec2" {
-  ami                    = "ami-0e2c8ccd4e0269736" # Standard Ubuntu 22.04 AMI for us-east-1
+  ami                    = data.aws_ami.latest_ubuntu.id # Dynamically fetched ID
   instance_type          = "t2.micro"
   vpc_security_group_ids = [aws_security_group.app_sg.id]
-  
-  # IMPORTANT: Use your key name exactly as it appears in AWS Console
   key_name               = "my-project-key" 
 
   tags = {
     Name = "Menna-App-Server"
   }
 
-  # This part ensures Docker is installed on the server automatically
   user_data = <<-EOF
               #!/bin/bash
               sudo apt-get update -y
@@ -56,7 +77,7 @@ resource "aws_instance" "menna_ec2" {
               EOF
 }
 
-# 4. Outputs (GitHub Actions needs this to get the IP)
+# 5. Output the Public IP
 output "ec2_public_ip" {
   value       = aws_instance.menna_ec2.public_ip
   description = "The public IP address of the EC2 instance"
