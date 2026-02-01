@@ -13,18 +13,15 @@ on:
           - ec2
 
 jobs:
-  deploy:
-    name: Deploy to ${{ github.event.inputs.deploy_target }}
-    # Dynamic runner selection: self-hosted for Rocky Linux, ubuntu-latest for AWS/Terraform
-    runs-on: ${{ github.event.inputs.deploy_target == 'local' && 'self-hosted' || 'ubuntu-latest' }}
-    
+  # --- JOB 1: Deploy to your Rocky Linux (Self-Hosted) ---
+  deploy-local:
+    if: github.event.inputs.deploy_target == 'local'
+    runs-on: self-hosted
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- SECTION 1: LOCAL DEPLOYMENT (Rocky Linux) ---
       - name: Local Docker Deployment
-        if: github.event.inputs.deploy_target == 'local'
         run: |
           echo "🚀 Starting Local Deployment on Rocky Linux..."
           docker pull mennat2003/menna-app:latest
@@ -32,15 +29,19 @@ jobs:
           docker rm app-container || true
           docker run -d --name app-container -p 8080:80 mennat2003/menna-app:latest
           echo "✅ Local Deployment Successful!"
-          echo "Access your app at: http://$(ip route get 1.1.1.1 | awk '{print $7}'):8080"
 
-      # --- SECTION 2: AWS EC2 DEPLOYMENT (Terraform) ---
+  # --- JOB 2: Deploy to AWS EC2 (GitHub Hosted Runner) ---
+  deploy-ec2:
+    if: github.event.inputs.deploy_target == 'ec2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Setup Terraform
-        if: github.event.inputs.deploy_target == 'ec2'
         uses: hashicorp/setup-terraform@v2
 
-      - name: Terraform Apply (Provision Infrastructure)
-        if: github.event.inputs.deploy_target == 'ec2'
+      - name: Terraform Apply
         id: tf-apply
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -49,26 +50,19 @@ jobs:
           cd terraform
           terraform init
           terraform apply -auto-approve
-          # Save the Public IP to GitHub Environment for the next step
           echo "EC2_IP=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
 
-      - name: Wait for Cloud-Init (Docker Install)
-        if: github.event.inputs.deploy_target == 'ec2'
-        run: |
-          echo "⏳ Waiting 60 seconds for Docker to be installed via user_data..."
-          sleep 60
+      - name: Wait for Cloud-Init
+        run: sleep 60
 
       - name: Deploy to EC2 via SSH
-        if: github.event.inputs.deploy_target == 'ec2'
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.EC2_IP }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "🚀 Pulling latest image and restarting container on EC2..."
             sudo docker pull mennat2003/menna-app:latest
             sudo docker stop app-container || true
             sudo docker rm app-container || true
             sudo docker run -d --name app-container -p 8080:80 mennat2003/menna-app:latest
-            echo "✅ EC2 Deployment Finished!"
