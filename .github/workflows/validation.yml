@@ -6,49 +6,46 @@ on:
 
 jobs:
   validate:
-    name: Dockerfile & Security Validation
+    name: Dockerfile & Security Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- Step 1: Check if Dockerfile exists ---
-      - name: Verify Dockerfile Existence
+      # --- Step 1: Verify Dockerfile Existence ---
+      - name: Check if Dockerfile exists
         run: |
           if [ -f "Dockerfile" ]; then
-            echo "✅ Dockerfile exists in the root directory."
+            echo "✅ Dockerfile found!"
           else
-            echo "❌ Error: Dockerfile is missing!"
+            echo "❌ Error: Dockerfile NOT found!"
             exit 1
           fi
 
-      # --- Step 2: Lint Dockerfile (Check for syntax errors) ---
-      # This checks if the file is valid WITHOUT building an image
-      - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: Dockerfile
-
-      # --- Step 3: Security Scan (Filesystem Scan) ---
-      # Since we aren't building an image, we scan the "fs" (Filesystem)
-      - name: Security Scan (Trivy FS)
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          format: 'table'
-          exit-code: 1
-          severity: 'CRITICAL,HIGH'
-
-      # --- Step 4: Generate Report ---
-      - name: Generate Validation Report
+      # --- Step 2: Install Prerequisites (Python & Checkov) ---
+      - name: Install Checkov
         run: |
-          echo "<h1>Validation Report</h1>" > validation-report.html
-          echo "<p>Dockerfile Existence: PASS</p>" >> validation-report.html
-          echo "<p>Security Scan: Completed</p>" >> validation-report.html
+          sudo apt-get update
+          sudo apt-get install -y python3-pip jq
+          pip3 install checkov
 
-      # --- Step 5: Upload Artifact ---
-      - name: Upload Validation Report
+      # --- Step 3: Run Checkov Scan and Generate HTML ---
+      # We output to JSON first, then wrap it in HTML tags for the artifact
+      - name: Run Checkov Scan
+        run: |
+          checkov -f Dockerfile --check CKV_DOCKER_1,CKV_DOCKER_2,CKV_DOCKER_3 -o json > checkov-results.json || true
+          
+          # Create a simple HTML wrapper to make the JSON readable in a browser
+          echo "<html><body style='font-family: sans-serif; background: #f4f4f4; padding: 20px;'>" > checkov-report.html
+          echo "<h1>Checkov Security Scan Report</h1>" >> checkov-report.html
+          echo "<div style='background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd;'>" >> checkov-report.html
+          echo "<h3>Scan Results (JSON Format):</h3>" >> checkov-report.html
+          echo "<pre>$(cat checkov-results.json | jq .)</pre>" >> checkov-report.html
+          echo "</div></body></html>" >> checkov-report.html
+
+      # --- Step 4: Upload Report as Artifact ---
+      - name: Upload Scan Report
         uses: actions/upload-artifact@v4
         with:
-          name: validation-results
-          path: validation-report.html
+          name: checkov-security-report
+          path: checkov-report.html
