@@ -6,7 +6,7 @@ on:
       deploy_target:
         description: 'Select Deployment Target'
         required: true
-        default: 'local'
+        default: 'ec2'
         type: choice
         options:
           - local
@@ -23,14 +23,14 @@ jobs:
 
       - name: Local Docker Deployment
         run: |
-          echo "🚀 Starting Local Deployment on Rocky Linux..."
+          echo "🚀 Starting Local Deployment..."
           docker pull mennat2003/menna-app:latest
           docker stop app-container || true
           docker rm app-container || true
           docker run -d --name app-container -p 8080:80 mennat2003/menna-app:latest
           echo "✅ Local Deployment Successful!"
 
-  # --- JOB 2: Deploy to AWS EC2 (GitHub Hosted Runner) ---
+  # --- JOB 2: Deploy to Manual AWS EC2 ---
   deploy-ec2:
     if: github.event.inputs.deploy_target == 'ec2'
     runs-on: ubuntu-latest
@@ -38,31 +38,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-
-      - name: Terraform Apply
-        id: tf-apply
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: |
-          cd terraform
-          terraform init
-          terraform apply -auto-approve
-          echo "EC2_IP=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
-
-      - name: Wait for Cloud-Init
-        run: sleep 60
-
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ env.EC2_IP }}
+          host: ${{ secrets.EC2_HOST }}      # Your EC2 Public IP stored in Secrets
           username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ${{ secrets.EC2_SSH_KEY }}    # Your Private Key (.pem) content stored in Secrets
           script: |
+            echo "🚀 Connecting to EC2 via SSH..."
             sudo docker pull mennat2003/menna-app:latest
             sudo docker stop app-container || true
             sudo docker rm app-container || true
             sudo docker run -d --name app-container -p 8080:80 mennat2003/menna-app:latest
+            echo "✅ EC2 Deployment Successful!"
