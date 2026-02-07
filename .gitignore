@@ -1,7 +1,5 @@
-# 1. Private Keys (أهم حاجة عشان الأمان)
 *.pem
 
-# 2. Terraform State & Folders (عشان الريبوزيتوري ميبقاش تقيل)
 .terraform/
 *.tfstate
 *.tfstate.backup
